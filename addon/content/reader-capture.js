@@ -5,6 +5,10 @@ var AIPaperReaderCapture = (() => {
   const union = (a, b) => a ? [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])] : b;
   const normalize = ([x1, y1, x2, y2]) => [Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2)];
   const area = rect => (rect[2] - rect[0]) * (rect[3] - rect[1]);
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  const contains = (outer, inner) => outer[0] <= inner[0] && outer[1] <= inner[1]
+    && outer[2] >= inner[2] && outer[3] >= inner[3];
+  const dragThreshold = 7;
   const viewportRect = (viewport, [x1, y1, x2, y2]) => normalize([
     ...viewport.convertToViewportPoint(x1, y1), ...viewport.convertToViewportPoint(x2, y2)
   ]);
@@ -109,7 +113,24 @@ var AIPaperReaderCapture = (() => {
         }
       }
     }
-    return blocks;
+    // One visible figure may be encoded as edge-to-edge raster tiles. Join only aligned strips.
+    let rects = blocks.map(({ rect }) => rect);
+    for (const axis of [0, 1]) {
+      const cross = 1 - axis;
+      rects.sort((a, b) => a[cross] - b[cross] || a[cross + 2] - b[cross + 2] || a[axis] - b[axis]);
+      const merged = [];
+      for (const rect of rects) {
+        const previous = merged.at(-1);
+        if (previous && Math.abs(previous[cross] - rect[cross]) <= 0.5
+            && Math.abs(previous[cross + 2] - rect[cross + 2]) <= 0.5
+            && Math.abs(Math.max(previous[axis], rect[axis]) - Math.min(previous[axis + 2], rect[axis + 2])) <= 0.5) {
+          merged[merged.length - 1] = union(previous, rect);
+        }
+        else merged.push(rect);
+      }
+      rects = merged;
+    }
+    return rects.map(rect => ({ rect, picture: true }));
   }
 
   function hit(blocks, x, y, page) {
@@ -122,6 +143,16 @@ var AIPaperReaderCapture = (() => {
           && (!match || area(rect) < area(match.rect))) match = { ...block, rect };
     }
     return match;
+  }
+
+  function blockAt(blocks, x, y, page) {
+    const text = hit(blocks.structure.filter(block => !block.picture), x, y, page)
+      || hit(blocks.text, x, y, page);
+    const figure = hit(blocks.structure.filter(block => block.picture), x, y, page);
+    // Leave OCR text selectable on pages covered by a single scan or background image.
+    const raster = hit(blocks.raster.filter(({ rect }) => area(rect) < 0.9 * area(page)), x, y, page);
+    if (figure && raster && contains(raster.rect, figure.rect)) return raster;
+    return figure || raster || text || hit(blocks.raster, x, y, page);
   }
 
   async function snapshot(doc, page, rect, rotation, optionalContentConfigPromise) {
@@ -169,9 +200,9 @@ var AIPaperReaderCapture = (() => {
         }
       };
       const keyup = event => {
-      if (event.key === (Zotero.isMac ? "Meta" : "Control")) {
-        for (const view of views.values()) view.release();
-      }
+        if (event.key === (Zotero.isMac ? "Meta" : "Control")) {
+          for (const view of views.values()) view.release();
+        }
       };
       const close = () => {
         this.readers.delete(doc);
@@ -206,6 +237,7 @@ var AIPaperReaderCapture = (() => {
       const events = ["pointerdown", "pointerup", "pointercancel", "mousedown", "mouseup", "click", "dragstart"];
       let pointer = null;
       let capture = null;
+      let suppressClick = false;
       let held = false;
       let removed = false;
 
@@ -231,24 +263,40 @@ var AIPaperReaderCapture = (() => {
         return blocks;
       }
 
-      function targetAt({ x, y }) {
+      function pageAt({ x, y }) {
         const element = doc.elementFromPoint(x, y)?.closest(".page[data-page-number]");
         const view = element && app.pdfViewer?.getPageView(Number(element.dataset.pageNumber) - 1);
         if (!view?.pdfPage || !element.clientWidth || !element.clientHeight) return null;
-        const { pdfPage: page, viewport } = view;
+        return { element, view, page: view.pdfPage };
+      }
+
+      function pdfPoint({ element, view }, { x, y }) {
+        const { viewport } = view;
         const bounds = element.getBoundingClientRect();
-        const [pdfX, pdfY] = viewport.convertToPdfPoint((x - bounds.left - element.clientLeft) * viewport.width / element.clientWidth,
-          (y - bounds.top - element.clientTop) * viewport.height / element.clientHeight);
-        const blocks = pageBlocks(page);
-        const block = hit(blocks.structure, pdfX, pdfY, page.view) || hit(blocks.text, pdfX, pdfY, page.view)
-          || hit(blocks.raster, pdfX, pdfY, page.view);
-        return block && { ...block, page, viewport, element };
+        return viewport.convertToPdfPoint(
+          clamp((x - bounds.left - element.clientLeft) / element.clientWidth, 0, 1) * viewport.width,
+          clamp((y - bounds.top - element.clientTop) / element.clientHeight, 0, 1) * viewport.height
+        );
+      }
+
+      function targetAt(point) {
+        const target = pageAt(point);
+        if (!target) return null;
+        const [x, y] = pdfPoint(target, point);
+        const block = blockAt(pageBlocks(target.page), x, y, target.page.view);
+        return block && { ...target, ...block };
+      }
+
+      function dragTarget(capture, point) {
+        const target = capture.page;
+        const rect = normalize([...capture.start, ...pdfPoint(target, point)]);
+        return area(rect) > 0 && { ...target, rect, picture: false };
       }
 
       function refresh() {
-        const target = held && pointer && targetAt(pointer);
+        const target = held && pointer && (capture?.dragged ? dragTarget(capture, pointer) : targetAt(pointer));
         if (!target) { overlay.remove(); return; }
-        const { element, viewport, rect } = target;
+        const { element, view: { viewport }, rect } = target;
         const [left, top, right, bottom] = viewportRect(viewport, rect);
         Object.assign(overlay.style, {
           left: `${100 * left / viewport.width}%`, top: `${100 * top / viewport.height}%`,
@@ -258,14 +306,38 @@ var AIPaperReaderCapture = (() => {
       }
 
       const updateModifier = event => {
-        held = this.runtime.core.hasPrimaryModifier(event, Zotero.isMac);
+        held = this.runtime.core.hasPrimaryModifier(event, Zotero.isMac) && !capture?.cancelled;
+        if (event.type === "keydown" && event.key === "Escape" && capture) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          release();
+          return;
+        }
+        if (!held && capture) capture.cancelled = true;
         refresh();
       };
       const move = event => {
+        if (event.isPrimary === false) return;
         pointer = { x: event.clientX, y: event.clientY };
-        updateModifier(event);
+        if (capture && !capture.dragged && !capture.cancelled
+            && Math.hypot(pointer.x - capture.point.x, pointer.y - capture.point.y) > dragThreshold) {
+          capture.dragged = true;
+          if (event.isTrusted && (event.buttons & 1)) {
+            try { capture.page.element.setPointerCapture(event.pointerId); }
+            catch (error) {
+              if (error.name !== "NotFoundError") Zotero.logError(error);
+            }
+          }
+        }
+        held = this.runtime.core.hasPrimaryModifier(event, Zotero.isMac) && !capture?.cancelled;
+        if (!held && capture) capture.cancelled = true;
+        refresh();
       };
-      const release = () => { held = false; if (!Cu.isDeadWrapper(overlay)) overlay.remove(); };
+      const release = () => {
+        held = false;
+        if (capture) capture.cancelled = true;
+        if (!Cu.isDeadWrapper(overlay)) overlay.remove();
+      };
       const leave = () => { pointer = null; release(); };
       const resetNativeSelection = () => {
         const internal = reader._internalReader;
@@ -287,28 +359,47 @@ var AIPaperReaderCapture = (() => {
           view?._render?.();
         }
       };
-      const click = event => {
-        const down = event.type === "pointerdown" || event.type === "mousedown";
-        if (down) {
-          const point = { x: event.clientX, y: event.clientY };
-          const target = event.button === 0 && this.runtime.core.hasPrimaryModifier(event, Zotero.isMac) && targetAt(point);
-          capture = target ? { target, point } : null;
-        }
-        if (!capture) return;
+      const consume = event => {
         event.preventDefault();
         event.stopImmediatePropagation();
+      };
+      const click = event => {
+        if (event.isPrimary === false) return;
+        const point = { x: event.clientX, y: event.clientY };
+        if (event.type === "pointerdown" || event.type === "mousedown") {
+          if (event.button !== 0) return;
+          if (event.type === "mousedown" && capture) { consume(event); return; }
+          suppressClick = false;
+          const page = this.runtime.core.hasPrimaryModifier(event, Zotero.isMac) && pageAt(point);
+          if (!page) { capture = null; return; }
+          capture = { page, point, start: pdfPoint(page, point), dragged: false, cancelled: false };
+          consume(event);
+          resetNativeSelection();
+          return;
+        }
+        if (event.type === "click") {
+          if (suppressClick && event.button === 0) { suppressClick = false; consume(event); }
+          return;
+        }
+        if (event.type === "mouseup" && !capture && suppressClick && event.button === 0) { consume(event); return; }
+        if (!capture || (event.type !== "pointercancel" && event.type !== "dragstart" && event.button !== 0)) return;
+        consume(event);
+        if (event.type === "dragstart") return;
         resetNativeSelection();
-        if (event.type === "pointercancel") { capture = null; return; }
-        if (event.type !== "click") return;
-        const { target, point } = capture;
+        const gesture = capture;
         capture = null;
-        if (event.button !== 0 || !this.runtime.core.hasPrimaryModifier(event, Zotero.isMac)
-            || Math.hypot(event.clientX - point.x, event.clientY - point.y) > 7) return;
-        const { page, rect, viewport, picture } = target;
+        suppressClick = true;
+        if (event.type === "pointercancel" || gesture.cancelled
+            || !this.runtime.core.hasPrimaryModifier(event, Zotero.isMac)) { release(); return; }
+        const dragged = gesture.dragged || Math.hypot(point.x - gesture.point.x, point.y - gesture.point.y) > dragThreshold;
+        const target = dragged ? dragTarget(gesture, point) : targetAt(gesture.point);
+        if (!target) { refresh(); return; }
+        const { page, rect, view: { viewport }, picture } = target;
         const name = `PDF 第 ${page.pageNumber} 页${picture ? "插图" : "快照"}`;
         const layers = app.pdfViewer.optionalContentConfigPromise;
         this.runtime.addReaderSnapshot(reader, page.pageNumber - 1, name, () => snapshot(doc, page, rect, viewport.rotation, layers))
           .catch(error => Zotero.logError(error));
+        refresh();
       };
       const pageRendered = () => {
         refresh();
@@ -322,7 +413,7 @@ var AIPaperReaderCapture = (() => {
         leave();
         onRemove();
         if (Cu.isDeadWrapper(doc) || Cu.isDeadWrapper(win)) return;
-        win.removeEventListener("mousemove", move, true);
+        win.removeEventListener("pointermove", move, true);
         win.removeEventListener("keydown", updateModifier, true);
         win.removeEventListener("keyup", updateModifier, true);
         win.removeEventListener("blur", leave);
@@ -332,7 +423,7 @@ var AIPaperReaderCapture = (() => {
         app.eventBus?.off("pagerendered", pageRendered);
         for (const type of events) win.removeEventListener(type, click, true);
       };
-      win.addEventListener("mousemove", move, true);
+      win.addEventListener("pointermove", move, true);
       win.addEventListener("keydown", updateModifier, true);
       win.addEventListener("keyup", updateModifier, true);
       win.addEventListener("blur", leave);

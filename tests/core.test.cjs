@@ -262,11 +262,18 @@ test("chat requests retain recent completed turns and the current question", () 
 });
 
 test("reading configuration supports old settings and validates imported values", () => {
-  assert.deepEqual(core.validateReading(), { mode: "auto", historyChars: 20000 });
+  assert.deepEqual(core.validateReading(), { mode: "auto", historyChars: 20000, keepNativeSidebar: false });
   assert.throws(() => core.validateReading({ mode: "invalid" }));
   assert.throws(() => core.validateReading({ historyChars: 0 }));
   const imported = core.parseImport('{"reading":{"mode":"abstract","historyChars":12000}}');
   assert.equal(core.mergeImport(core.defaults(defaultSkill), imported).reading.mode, "abstract");
+  const defaults = core.defaults(defaultSkill);
+  const enabled = core.parseImport('{"reading":{"keepNativeSidebar":true}}');
+  const settings = core.mergeImport(defaults, enabled);
+  assert.equal(settings.reading.keepNativeSidebar, true);
+  assert.equal(core.mergeImport(settings, imported).reading.keepNativeSidebar, true);
+  const disabled = core.parseImport('{"reading":{"keepNativeSidebar":false}}');
+  assert.equal(core.mergeImport(settings, disabled).reading.keepNativeSidebar, false);
 });
 
 test("supplemental files share the configured character budget and strip local paths", () => {

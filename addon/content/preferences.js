@@ -24,7 +24,11 @@ window.AIPaperPreferences = {
       });
     });
     this.bind("saveReading", "reading", async () => {
-      await this.runtime.saveReading({ mode: this.element("readingMode").value, historyChars: this.element("historyChars").value });
+      await this.runtime.saveReading({
+        mode: this.element("readingMode").value,
+        historyChars: this.element("historyChars").value,
+        keepNativeSidebar: this.element("keepNativeSidebar").checked
+      });
       this.status("reading", "论文问答设置已保存。 ");
     });
     this.bind("directMode", "api", () => this.runtime.saveAPIMode("direct"));
@@ -379,6 +383,7 @@ window.AIPaperPreferences = {
     const historyLimit = this.element("historyChars");
     select.value = reading.mode;
     historyLimit.value = reading.historyChars;
+    this.element("keepNativeSidebar").checked = reading.keepNativeSidebar;
     this.fitField(select);
     this.fitField(historyLimit);
   },

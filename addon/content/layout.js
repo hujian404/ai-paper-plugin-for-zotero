@@ -5,7 +5,7 @@ var AIPaperLayout = class {
     this.runtime = runtime;
     this.win = win;
     this.doc = win.document;
-    this.hosts = [];
+    this.hosts = new Map();
     this.observers = [];
     this.panels = new Map();
     this.onSelect = () => this.update();
@@ -34,6 +34,9 @@ var AIPaperLayout = class {
     this.updateSizing();
     this.mount("library", "zotero-item-pane");
     this.mount("reader", "zotero-context-pane-inner");
+    this.onSettings = () => this.updateSidebarSetting();
+    this.runtime.listeners.add(this.onSettings);
+    this.updateSidebarSetting();
     this.bindSelection();
     this.update();
   }
@@ -44,9 +47,20 @@ var AIPaperLayout = class {
     const body = this.doc.createElementNS("http://www.w3.org/1999/xhtml", "div");
     body.className = "aip-chat-host";
     host.append(body);
-    host.classList.add("aip-chat-replaced");
-    this.hosts.push(host);
     const panel = new AIPaperSidebar(this.runtime, { body, doc: this.doc, tabType: type, layout: this });
+    const switcher = panel.element("div", "aip-sidebar-switcher");
+    switcher.setAttribute("role", "group");
+    switcher.setAttribute("aria-label", "侧栏视图");
+    const chatButton = panel.element("button", "", "论文问答");
+    const nativeButton = panel.element("button", "", "Zotero 原生");
+    chatButton.type = nativeButton.type = "button";
+    chatButton.addEventListener("click", () => this.showSidebar(type, false));
+    nativeButton.addEventListener("click", () => this.showSidebar(type, true));
+    switcher.append(chatButton, nativeButton);
+    host.append(switcher);
+    host.classList.add("aip-pane-host");
+    const pane = type === "library" ? host : this.doc.getElementById("zotero-context-pane");
+    this.hosts.set(type, { host, pane, switcher, chatButton, nativeButton });
     this.panels.set(type, panel);
     this.runtime.panels.set(body, panel);
     const observer = new this.win.MutationObserver(() => {
@@ -55,6 +69,27 @@ var AIPaperLayout = class {
     });
     observer.observe(host, { attributes: true, attributeFilter: ["view-type", "collapsed"] });
     this.observers.push(observer);
+  }
+
+  updateSidebarSetting() {
+    this.keepNativeSidebar = this.runtime.getSettings().reading.keepNativeSidebar;
+    for (const [type, { host, switcher, nativeButton }] of this.hosts) {
+      switcher.hidden = !this.keepNativeSidebar;
+      host.classList.toggle("aip-pane-switchable", this.keepNativeSidebar);
+      this.showSidebar(type, nativeButton.getAttribute("aria-pressed") === "true");
+    }
+  }
+
+  showSidebar(type, native) {
+    const entry = this.hosts.get(type);
+    if (!entry) return;
+    const { host, pane, chatButton, nativeButton } = entry;
+    native = native && this.keepNativeSidebar;
+    this.panels.get(type).body.hidden = native;
+    host.classList.toggle("aip-chat-replaced", !native);
+    pane?.classList.toggle("aip-chat-active", !native);
+    chatButton.setAttribute("aria-pressed", String(!native));
+    nativeButton.setAttribute("aria-pressed", String(native));
   }
 
   bindSelection() {
@@ -102,6 +137,7 @@ var AIPaperLayout = class {
   }
 
   expand(type) {
+    this.showSidebar(type, false);
     if (type === "library") {
       const host = this.doc.getElementById("zotero-item-pane");
       if (host?.collapsed) this.win.ZoteroPane.toggleItemPane();
@@ -117,6 +153,7 @@ var AIPaperLayout = class {
     this.win.removeEventListener("sizemodechange", this.onResize);
     this.screen.removeEventListener?.("change", this.onResize);
     clearTimeout(this.timer);
+    this.runtime.listeners.delete(this.onSettings);
     this.view?.onSelect.removeListener(this.onSelect);
     for (const observer of this.observers) observer.disconnect();
     for (const panel of this.panels.values()) {
@@ -124,7 +161,11 @@ var AIPaperLayout = class {
       this.runtime.panels.delete(panel.body);
       panel.body.remove();
     }
-    for (const host of this.hosts) host.classList.remove("aip-chat-replaced");
+    for (const { host, pane, switcher } of this.hosts.values()) {
+      host.classList.remove("aip-pane-host", "aip-pane-switchable", "aip-chat-replaced");
+      pane?.classList.remove("aip-chat-active");
+      switcher.remove();
+    }
     for (const { pane } of this.widthTargets) pane.classList.remove("aip-resizable-pane");
     this.doc.documentElement.style.removeProperty("--aip-pane-min-width");
     this.doc.documentElement.style.removeProperty("--aip-pane-max-width");

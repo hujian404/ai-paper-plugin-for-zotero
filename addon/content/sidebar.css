@@ -1,14 +1,27 @@
 @import url("native-ui.css?v=1.5.0");
 
-.aip-layout .aip-chat-replaced { position: relative; min-width: 0; min-height: 0; }
+.aip-layout .aip-pane-host { position: relative; min-width: 0; min-height: 0; }
 .aip-layout .aip-chat-replaced > deck { visibility: hidden !important; pointer-events: none !important; }
-.aip-layout #zotero-view-item-sidenav > :not([data-action="toggle-pane"]),
-.aip-layout #zotero-context-pane-sidenav > :not([data-action="toggle-pane"]) { display: none !important; }
-.aip-layout #zotero-item-pane:not([collapsed="true"]) > #zotero-view-item-sidenav,
-.aip-layout #zotero-context-pane:not([collapsed="true"]) > #zotero-context-pane-sidenav { display: none !important; }
-.aip-layout #zotero-item-pane[collapsed="true"] > .aip-chat-host,
-.aip-layout #zotero-context-pane[collapsed="true"] .aip-chat-host { display: none !important; }
+.aip-layout .aip-chat-active > .zotero-view-item-sidenav > :not([data-action="toggle-pane"]),
+.aip-layout .aip-chat-active:not([collapsed="true"]) > .zotero-view-item-sidenav,
+.aip-layout #zotero-item-pane[collapsed="true"] > :is(.aip-chat-host, .aip-sidebar-switcher),
+.aip-layout #zotero-context-pane[collapsed="true"] :is(.aip-chat-host, .aip-sidebar-switcher),
+.aip-layout :is(.aip-chat-host, .aip-sidebar-switcher)[hidden] { display: none !important; }
 .aip-chat-host { position: absolute; inset: 0; z-index: 5; min-width: 0; min-height: 0; overflow: hidden; }
+.aip-pane-switchable { --aip-sidebar-switcher-height: 34px; padding-block-end: var(--aip-sidebar-switcher-height); }
+.aip-pane-switchable > .aip-chat-host { inset-block-end: var(--aip-sidebar-switcher-height); }
+.aip-sidebar-switcher {
+  position: absolute; inset: auto 0 0; z-index: 5; box-sizing: border-box;
+  height: var(--aip-sidebar-switcher-height); display: flex; align-items: center; gap: 4px; padding: 0 8px;
+  border-block-start: var(--material-panedivider, 1px solid ThreeDShadow);
+  background: var(--material-sidepane, Canvas); color: var(--fill-primary, CanvasText);
+}
+.aip-sidebar-switcher button {
+  appearance: none; font: inherit; color: inherit; padding: 3px 8px;
+  border: 1px solid transparent; border-radius: 4px; background: transparent;
+}
+.aip-sidebar-switcher button:is(:hover, [aria-pressed="true"]) { background: var(--fill-quinary, ButtonFace); }
+.aip-sidebar-switcher button[aria-pressed="true"] { border-color: var(--fill-tertiary, GrayText); }
 .aip-layout .aip-resizable-pane:not([collapsed="true"]) {
   flex-shrink: 0 !important;
   min-width: var(--aip-pane-min-width) !important;

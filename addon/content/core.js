@@ -25,7 +25,7 @@ var AIPaperCore = (() => {
       apiMode: "direct",
       api: { ...DEFAULT_API, models: [] },
       magpie: validateMagpie(),
-      reading: { mode: "auto", historyChars: 20000 },
+      reading: validateReading(),
       skills: [{ ...defaultSkill }],
       activeSkillID: defaultSkill.id
     };
@@ -155,7 +155,11 @@ var AIPaperCore = (() => {
   function validateReading(raw = {}) {
     const mode = raw.mode || "auto";
     if (!["auto", "fulltext", "abstract"].includes(mode)) throw new Error("请选择有效的论文内容范围。 ");
-    return { mode, historyChars: numberInRange(raw.historyChars ?? 20000, 1000, 200000, "历史上下文字符上限", true) };
+    return {
+      mode,
+      historyChars: numberInRange(raw.historyChars ?? 20000, 1000, 200000, "历史上下文字符上限", true),
+      keepNativeSidebar: raw.keepNativeSidebar === true
+    };
   }
 
   function uniqueID() {
@@ -207,7 +211,10 @@ var AIPaperCore = (() => {
       }
     }
     if (data.activeSkillID) result.activeSkillID = String(data.activeSkillID);
-    if (data.reading) result.reading = validateReading(data.reading);
+    if (data.reading) {
+      result.reading = validateReading(data.reading);
+      if (data.reading.keepNativeSidebar === undefined) delete result.reading.keepNativeSidebar;
+    }
     if (!result.api && !result.magpie && !result.skills && !result.reading) throw new Error("未找到 API 配置或 Skill。 ");
     return result;
   }
@@ -217,7 +224,7 @@ var AIPaperCore = (() => {
     if (imported.api) next.api = imported.api;
     if (imported.apiMode) next.apiMode = imported.apiMode;
     if (imported.magpie) next.magpie = imported.magpie;
-    if (imported.reading) next.reading = imported.reading;
+    if (imported.reading) next.reading = { ...next.reading, ...imported.reading };
     if (imported.skills) {
       for (const skill of imported.skills) {
         const index = next.skills.findIndex(existing => existing.id === skill.id);
