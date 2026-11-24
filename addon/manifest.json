@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "AiPluginForZotero",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "在 Zotero 专用对话侧栏阅读论文，保存问答历史并联动打开论文。",
   "applications": {
     "zotero": {

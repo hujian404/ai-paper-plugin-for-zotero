@@ -6,7 +6,17 @@
       <html:button id="aip-pref-magpieMode" type="button" aria-pressed="false" aria-controls="aip-pref-magpiePanel">通过 Magpie 配置</html:button>
     </html:div>
     <html:div id="aip-pref-directPanel">
-      <html:p class="aip-pref-help">填写 OpenAI 兼容服务的 API 地址和密钥，点击获取模型列表后选择模型。</html:p>
+      <html:div class="aip-pref-field-row aip-pref-profile-row">
+        <html:label for="aip-pref-apiProfile">当前 API 配置</html:label>
+        <html:select id="aip-pref-apiProfile"></html:select>
+        <html:button id="aip-pref-addAPIProfile" type="button">添加配置</html:button>
+        <html:button id="aip-pref-deleteAPIProfile" type="button" hidden="hidden">删除当前配置</html:button>
+      </html:div>
+      <html:div class="aip-pref-field-row">
+        <html:label for="aip-pref-apiProfileName">配置名称</html:label>
+        <html:input id="aip-pref-apiProfileName" type="text" maxlength="80"/>
+      </html:div>
+      <html:p class="aip-pref-help">各配置独立保存 API 地址、密钥和默认模型。切换配置后，新的论文问答将使用所选配置。</html:p>
       <html:div class="aip-pref-field-row">
         <html:label for="aip-pref-baseURL">Base URL / 完整接口地址</html:label>
         <html:input id="aip-pref-baseURL" type="url" placeholder="https://api.openai.com/v1" spellcheck="false"/>
@@ -119,7 +129,7 @@
 
   <html:section class="aip-pref-section">
     <html:h2>导入与导出</html:h2>
-    <html:p class="aip-pref-help">JSON 可包含 API 配置和 Skill 列表。相同 ID 的 Skill 会更新，其他 Skill 会保留。导入未提供 API Key 时沿用当前密钥。</html:p>
+    <html:p class="aip-pref-help">导出包含所有 API 配置、论文问答设置和 Skill，API Key 由本机凭据管理器保存。导入旧式单套 API 配置会更新当前配置。</html:p>
     <html:div class="aip-pref-actions">
       <html:button id="aip-pref-importConfig" type="button">导入 API / 插件配置</html:button>
       <html:button id="aip-pref-exportConfig" type="button">导出配置</html:button>

@@ -198,7 +198,7 @@ var AIPaperRuntime = class {
     if (!text.trim()) return;
     const panel = await this.readerComposer(reader, pageIndex);
     if (panel?.context.attachment?.id !== reader.itemID) return;
-    const limited = this.core.limitText(quote, this.getSettings().api.contextChars);
+    const limited = this.core.limitText(quote, this.core.activeAPIProfile(this.getSettings()).api.contextChars);
     panel.addTextAttachment({ id: this.core.uniqueID(), name: `PDF 第 ${page} 页引用.md`, ...limited });
   }
 
@@ -211,7 +211,8 @@ var AIPaperRuntime = class {
     if (settings.schemaVersion !== 1 || !Array.isArray(settings.skills) || !settings.skills.length) {
       throw new Error("AI论文配置格式无效，请在设置页重新导入配置。 ");
     }
-    settings.api = this.core.validateAPI(settings.api, false);
+    Object.assign(settings, this.core.normalizeAPIProfiles(settings.apiProfiles, settings.activeAPIProfileID, settings.api));
+    delete settings.api;
     settings.apiMode = settings.apiMode === "magpie" ? "magpie" : "direct";
     settings.magpie = this.core.validateMagpie(settings.magpie);
     settings.reading = this.core.validateReading(settings.reading);
@@ -236,40 +237,45 @@ var AIPaperRuntime = class {
     Zotero.Prefs.set(this.preferenceKey, JSON.stringify({ ...settings, skillSetVersion, skills, activeSkillID }), true);
   }
 
-  getAPIKey() {
-    const login = Services.logins.findLogins("chrome://zotero-ai-paper", null, API_LOGIN_REALM)[0];
-    return login?.password || "";
+  apiLogins(id) {
+    const realm = id === this.core.legacyAPIProfileID ? API_LOGIN_REALM : API_LOGIN_REALM + " / " + id;
+    return { realm, entries: Services.logins.findLogins("chrome://zotero-ai-paper", null, realm) };
   }
 
-  async setAPIKey(key) {
-    const existing = Services.logins.findLogins("chrome://zotero-ai-paper", null, API_LOGIN_REALM);
+  getAPIKey(id) {
+    return this.apiLogins(id).entries[0]?.password || "";
+  }
+
+  async setAPIKey(id, key) {
+    const { realm, entries } = this.apiLogins(id);
     if (!key) {
-      for (const login of existing) Services.logins.removeLogin(login);
+      for (const login of entries) Services.logins.removeLogin(login);
       return;
     }
     const login = Cc["@mozilla.org/login-manager/loginInfo;1"].createInstance(Ci.nsILoginInfo);
-    login.init("chrome://zotero-ai-paper", null, API_LOGIN_REALM, "api", key, "", "");
-    if (existing.length) Services.logins.modifyLogin(existing[0], login);
+    login.init("chrome://zotero-ai-paper", null, realm, "api", key, "", "");
+    if (entries.length) Services.logins.modifyLogin(entries[0], login);
     else if (Services.logins.addLoginAsync) await Services.logins.addLoginAsync(login);
     else Services.logins.addLogin(login);
   }
 
-  changeSettings(transform, key, task) {
+  changeSettings(transform, credential, task) {
     const operation = this.settingsQueue.then(async () => {
       if (!this.alive) throw new Error("插件已停用。 ");
       if (task?.cancelled) throw new Error("模型列表获取已取消。 ");
       const next = transform(this.getSettings());
       let oldKey;
-      if (key !== undefined) {
-        oldKey = this.getAPIKey();
-        await this.setAPIKey(key);
+      const credentialID = credential && (credential.id ?? next.activeAPIProfileID);
+      if (credentialID) {
+        oldKey = this.getAPIKey(credentialID);
+        if (credential.key !== oldKey) await this.setAPIKey(credentialID, credential.key);
       }
       try {
         if (task?.cancelled) throw new Error("模型列表获取已取消。 ");
         Zotero.Prefs.set(this.preferenceKey, JSON.stringify(next), true);
       }
       catch (error) {
-        if (key !== undefined) await this.setAPIKey(oldKey);
+        if (credentialID && credential.key !== oldKey) await this.setAPIKey(credentialID, oldKey);
         throw error;
       }
       for (const listener of this.listeners) {
@@ -282,9 +288,43 @@ var AIPaperRuntime = class {
     return operation;
   }
 
-  saveAPI(raw, key, task) {
-    const api = this.core.validateAPI(raw, false);
-    return this.changeSettings(settings => ({ ...settings, api }), key.trim(), task);
+  saveAPI(id, name, raw, key, task) {
+    const profile = this.core.validateAPIProfile({ id, name, api: raw });
+    return this.changeSettings(settings => {
+      if (settings.activeAPIProfileID !== id) throw new Error("API 配置已切换，请重新保存。");
+      settings.apiProfiles = settings.apiProfiles.map(entry => entry.id === id ? profile : entry);
+      return settings;
+    }, { id, key: key.trim() }, task);
+  }
+
+  createAPIProfile() {
+    const id = Services.uuid.generateUUID().toString().slice(1, -1);
+    return this.changeSettings(settings => {
+      let number = settings.apiProfiles.length + 1;
+      const names = new Set(settings.apiProfiles.map(profile => profile.name));
+      while (names.has("配置 " + number)) number++;
+      settings.apiProfiles.push(this.core.validateAPIProfile({ id, name: "配置 " + number, api: {} }));
+      settings.activeAPIProfileID = id;
+      return settings;
+    });
+  }
+
+  selectAPIProfile(id) {
+    return this.changeSettings(settings => {
+      if (!settings.apiProfiles.some(profile => profile.id === id)) throw new Error("找不到所选 API 配置。");
+      settings.activeAPIProfileID = id;
+      return settings;
+    });
+  }
+
+  deleteAPIProfile(id) {
+    return this.changeSettings(settings => {
+      if (settings.activeAPIProfileID !== id) throw new Error("API 配置已切换，请重新选择。");
+      if (settings.apiProfiles.length <= 1) throw new Error("请至少保留一套 API 配置。");
+      settings.apiProfiles = settings.apiProfiles.filter(profile => profile.id !== id);
+      settings.activeAPIProfileID = settings.apiProfiles[0].id;
+      return settings;
+    }, { id, key: "" });
   }
 
   saveAPIMode(mode) {
@@ -300,21 +340,22 @@ var AIPaperRuntime = class {
           .map(({ id, name, provider }) => ({ id, label: `${name} · ${provider}` }))
       };
     }
-    return {
-      mode: "direct", model: settings.api.model,
-      options: settings.api.models.map(id => ({ id, label: id }))
-    };
+    const { id: profileID, name, api } = this.core.activeAPIProfile(settings);
+    return { mode: "direct", profileID, name, model: api.model, options: api.models.map(id => ({ id, label: id })) };
   }
 
-  selectModel(model, mode) {
+  selectModel(model, mode, profileID) {
     return this.changeSettings(settings => {
       if (mode && mode !== settings.apiMode) throw new Error("API 配置方式已切换，请重新选择模型。 ");
       if (settings.apiMode === "magpie") {
         if (!settings.magpie.selected.includes(model)) throw new Error("Magpie 模型未勾选，请重新选择。 ");
         return { ...settings, magpie: { ...settings.magpie, model } };
       }
-      if (!settings.api.models.includes(model)) throw new Error("模型列表已更新，请重新选择模型。 ");
-      return { ...settings, api: { ...settings.api, model } };
+      const profile = this.core.activeAPIProfile(settings);
+      if (profileID && profileID !== profile.id) throw new Error("API 配置已切换，请重新选择模型。");
+      if (!profile.api.models.includes(model)) throw new Error("模型列表已更新，请重新选择模型。 ");
+      profile.api.model = model;
+      return settings;
     });
   }
 
@@ -405,14 +446,25 @@ var AIPaperRuntime = class {
       if (!imported.skills) throw new Error("所选文件中没有 Skill，请选择包含提示词的文件。 ");
       imported = { skills: imported.skills };
     }
-    await this.changeSettings(settings => this.core.mergeImport(settings, imported), imported.apiKey);
+    const credential = imported.apiKey === undefined ? undefined : { key: imported.apiKey };
+    await this.changeSettings(settings => {
+      for (const profile of imported.apiProfiles || []) {
+        const existing = settings.apiProfiles.find(entry => entry.id === profile.id);
+        if (existing && new URL(existing.api.baseURL).origin !== new URL(profile.api.baseURL).origin && this.getAPIKey(profile.id)) {
+          throw new Error(`配置「${existing.name}」的服务地址不同，请在设置中单独编辑该配置。`);
+        }
+      }
+      return this.core.mergeImport(settings, imported);
+    }, credential);
     return imported;
   }
 
   async exportConfig(win) {
     const path = await this.pickFile(win, "导出配置", true, "*.json", "ai-paper-config.json");
     if (!path) return false;
-    await IOUtils.writeUTF8(path, JSON.stringify(this.getSettings(), null, 2), { tmpPath: path + ".tmp" });
+    const settings = this.getSettings();
+    const data = { ...settings, api: this.core.activeAPIProfile(settings).api };
+    await IOUtils.writeUTF8(path, JSON.stringify(data, null, 2), { tmpPath: path + ".tmp" });
     return true;
   }
 
@@ -458,7 +510,7 @@ var AIPaperRuntime = class {
     else if (/\.(txt|md|markdown|csv|tsv|json|tex)$/i.test(name)) text = await IOUtils.readUTF8(path);
     else throw new Error(`${name} 的格式暂无法读取。可添加 PDF、TXT、Markdown、CSV、TSV、JSON 或 TeX 文件。`);
     if (!text?.trim()) throw new Error(`${name} 没有可提取的文本。`);
-    const limited = this.core.limitText(text.trim(), this.getSettings().api.contextChars);
+    const limited = this.core.limitText(text.trim(), this.core.activeAPIProfile(this.getSettings()).api.contextChars);
     return { id: this.core.uniqueID(), path, name, ...limited };
   }
 
@@ -531,8 +583,10 @@ var AIPaperRuntime = class {
       if (!this.alive || !context.supported) throw new Error("请先选择一篇论文。 ");
       question = String(question).trim();
       if (!question || question.length > 5000) throw new Error("问题须为 1–5000 个字符。 ");
+      await this.settingsQueue;
       const settings = this.getSettings();
-      let api = settings.api;
+      const profile = this.core.activeAPIProfile(settings);
+      let api = profile.api;
       let key;
       if (settings.apiMode === "magpie") {
         const { model, selected, port } = settings.magpie;
@@ -541,7 +595,7 @@ var AIPaperRuntime = class {
         api = { ...api, baseURL: origin + "/v1", model, models: selected, localMagpie: true };
         key = MAGPIE_CLIENT;
       }
-      else key = this.getAPIKey();
+      else key = this.getAPIKey(profile.id);
       this.core.validateAPI(api);
       files = this.core.prepareFiles(files, api.contextChars);
       images = this.core.prepareImages(images);

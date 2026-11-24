@@ -571,7 +571,7 @@ var AIPaperSidebar = class {
   refreshModels() {
     if (this.destroyed) return;
     try {
-      const { mode, model, options } = this.runtime.modelPicker();
+      const { mode, profileID, name, model, options } = this.runtime.modelPicker();
       const placeholder = this.element("option", "", options.length ? "选择模型" : "暂无模型");
       placeholder.value = "";
       placeholder.disabled = true;
@@ -581,8 +581,9 @@ var AIPaperSidebar = class {
         return option;
       }));
       this.modelMode = mode;
+      this.modelProfileID = profileID;
       this.ui.model.value = model;
-      this.ui.model.title = this.ui.model.selectedOptions[0]?.textContent || "";
+      this.ui.model.title = [name, this.ui.model.selectedOptions[0]?.textContent].filter(Boolean).join(" · ");
       this.sizeModelPicker();
       this.updateControls();
     }
@@ -601,7 +602,7 @@ var AIPaperSidebar = class {
   async changeModel() {
     const selected = this.ui.model.value;
     if (!selected) return;
-    const operation = this.runtime.selectModel(selected, this.modelMode);
+    const operation = this.runtime.selectModel(selected, this.modelMode, this.modelProfileID);
     this.modelChange = operation;
     this.updateControls();
     try {

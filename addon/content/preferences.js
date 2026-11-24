@@ -33,6 +33,31 @@ window.AIPaperPreferences = {
     });
     this.bind("directMode", "api", () => this.runtime.saveAPIMode("direct"));
     this.bind("magpieMode", "api", () => this.runtime.saveAPIMode("magpie"));
+    this.element("apiProfile").addEventListener("change", async event => {
+      const select = event.currentTarget;
+      const id = select.value;
+      if (!this.confirmAPIProfileSwitch()) { select.value = this.apiProfileID; return; }
+      this.cancelAPIRequests();
+      try { await this.runtime.selectAPIProfile(id); }
+      catch (error) {
+        select.value = this.apiProfileID;
+        this.status("api", error.message, true);
+      }
+    });
+    this.bind("addAPIProfile", "api", async () => {
+      if (!this.confirmAPIProfileSwitch()) return;
+      this.cancelAPIRequests();
+      await this.runtime.createAPIProfile();
+      if (this.destroyed) return;
+      this.element("apiProfileName").focus();
+      this.element("apiProfileName").select();
+    });
+    this.bind("deleteAPIProfile", "api", async () => {
+      const { id, name } = this.runtime.core.activeAPIProfile(this.runtime.getSettings());
+      if (!window.confirm(`删除 API 配置「${name}」及其本机保存的密钥？`)) return;
+      this.cancelAPIRequests();
+      await this.runtime.deleteAPIProfile(id);
+    });
     this.bind("importMagpie", "api", async () => {
       const task = this.runtime.createTask();
       this.magpieTask = task;
@@ -50,11 +75,14 @@ window.AIPaperPreferences = {
     });
     this.bind("saveAPI", "api", async () => {
       this.cancelModelFetch();
-      await this.runtime.saveAPI(this.readAPI(false), this.element("apiKey").value);
+      const id = this.apiProfileID;
+      await this.runtime.saveAPI(id, this.element("apiProfileName").value, this.readAPI(false), this.element("apiKey").value);
+      if (this.destroyed || id !== this.apiProfileID) return;
       this.modelDirty = false;
       this.status("api", "API 配置已保存。 ");
     });
     this.bind("fetchModels", "api", async () => {
+      const id = this.apiProfileID;
       const api = this.readAPI(false);
       const key = this.element("apiKey").value.trim();
       const task = this.runtime.createTask();
@@ -63,13 +91,13 @@ window.AIPaperPreferences = {
       this.status("api", "正在请求模型列表…");
       try {
         const models = await this.runtime.fetchModels(api, key, task);
-        if (this.destroyed || task.cancelled) return;
+        if (this.destroyed || task.cancelled || id !== this.apiProfileID) return;
         const current = this.readAPI(false);
         if (this.runtime.core.modelsEndpoint(current.baseURL) !== this.runtime.core.modelsEndpoint(api.baseURL)
             || key !== this.element("apiKey").value.trim()) return;
         const model = models.includes(current.model) ? current.model : "";
-        await this.runtime.saveAPI({ ...current, model, models }, key, task);
-        if (this.destroyed || task.cancelled) return;
+        await this.runtime.saveAPI(id, this.element("apiProfileName").value, { ...current, model, models }, key, task);
+        if (this.destroyed || task.cancelled || id !== this.apiProfileID) return;
         this.models = models;
         this.modelDirty = false;
         this.modelsSource = this.runtime.core.modelsEndpoint(current.baseURL);
@@ -104,7 +132,7 @@ window.AIPaperPreferences = {
       }
       catch (error) { if (!task.cancelled) throw error; }
       finally { if (this.testTask === task) this.testTask = null; }
-    });
+    }, () => Boolean(this.element("model").value));
     this.element("showKey").addEventListener("click", () => {
       const input = this.element("apiKey");
       input.type = input.type === "password" ? "text" : "password";
@@ -197,18 +225,22 @@ window.AIPaperPreferences = {
     element.classList.toggle("aip-pref-error", error);
   },
 
-  bind(name, group, action) {
+  bind(name, group, action, canRun = () => true) {
     const button = this.element(name);
     button.addEventListener("click", async () => {
       button.disabled = true;
       try { await action(); }
       catch (error) { this.status(group, error.message, true); }
-      finally { if (!this.destroyed) button.disabled = false; }
+      finally { if (!this.destroyed) button.disabled = !canRun(); }
     });
   },
 
-  loadAPI() {
-    const api = this.runtime.getSettings().api;
+  loadAPI(profile = this.runtime.core.activeAPIProfile(this.runtime.getSettings())) {
+    const { id, name, api } = profile;
+    this.apiProfileID = id;
+    const profileName = this.element("apiProfileName");
+    profileName.value = name;
+    this.fitField(profileName);
     for (const name of this.apiFields) {
       const field = this.element(name);
       field.value = api[name];
@@ -219,8 +251,21 @@ window.AIPaperPreferences = {
     this.modelsSource = this.runtime.core.modelsEndpoint(api.baseURL);
     this.renderModels(api.model);
     const key = this.element("apiKey");
-    key.value = this.runtime.getAPIKey();
+    key.type = "password";
+    this.element("showKey").textContent = "显示";
+    key.value = this.runtime.getAPIKey(id);
     this.fitField(key);
+  },
+
+  confirmAPIProfileSwitch() {
+    const { id, name, api } = this.runtime.core.activeAPIProfile(this.runtime.getSettings());
+    try {
+      if (this.element("apiProfileName").value.trim() === name
+          && this.element("apiKey").value.trim() === this.runtime.getAPIKey(id)
+          && JSON.stringify(this.readAPI(false)) === JSON.stringify(api)) return true;
+    }
+    catch (_) { /* An incomplete form may also contain unsaved edits. */ }
+    return window.confirm("当前 API 配置有未保存的修改。放弃修改并继续？");
   },
 
   readAPI(requireModel = true) {
@@ -242,7 +287,28 @@ window.AIPaperPreferences = {
 
   syncAPI() {
     if (this.destroyed) return;
-    const { api, apiMode, magpie } = this.runtime.getSettings();
+    const settings = this.runtime.getSettings();
+    const { apiMode, magpie, apiProfiles, activeAPIProfileID } = settings;
+    const profile = this.runtime.core.activeAPIProfile(settings);
+    const select = this.element("apiProfile");
+    const options = JSON.stringify(apiProfiles.map(({ id, name }) => [id, name]));
+    if (this.apiProfileOptions !== options) {
+      this.apiProfileOptions = options;
+      select.replaceChildren(...apiProfiles.map(({ id, name }) => {
+        const option = this.doc.createElementNS("http://www.w3.org/1999/xhtml", "option");
+        option.value = id;
+        option.textContent = name;
+        return option;
+      }));
+    }
+    select.value = activeAPIProfileID;
+    this.fitField(select);
+    this.element("deleteAPIProfile").hidden = apiProfiles.length <= 1;
+    if (this.apiProfileID !== activeAPIProfileID) {
+      this.cancelAPIRequests();
+      this.status("api", "");
+      this.loadAPI(profile);
+    }
     const viaMagpie = apiMode === "magpie";
     if (this.apiMode !== apiMode) {
       this.cancelAPIRequests();
@@ -254,7 +320,7 @@ window.AIPaperPreferences = {
       this.element("magpiePanel").hidden = !viaMagpie;
     }
     if (viaMagpie) this.renderMagpie(magpie);
-    else this.syncModels(api);
+    else this.syncModels(profile);
   },
 
   renderMagpie({ models, selected }) {
@@ -321,12 +387,12 @@ window.AIPaperPreferences = {
     for (const [id, button] of this.magpieButtons) button.setAttribute("aria-pressed", String(chosen.has(id)));
   },
 
-  syncModels(api) {
+  syncModels({ id, api }) {
     if (this.destroyed || this.modelDirty || this.modelTask) return;
     let sameSource = false;
     try { sameSource = this.runtime.core.modelsEndpoint(this.element("baseURL").value) === this.runtime.core.modelsEndpoint(api.baseURL); }
     catch (_) {}
-    if (!sameSource || this.element("apiKey").value.trim() !== this.runtime.getAPIKey()) return;
+    if (!sameSource || this.element("apiKey").value.trim() !== this.runtime.getAPIKey(id)) return;
     this.models = api.models;
     this.modelsSource = this.runtime.core.modelsEndpoint(api.baseURL);
     this.renderModels(api.model);

@@ -2,6 +2,7 @@
 
 var AIPaperCore = (() => {
   const markdown = typeof AIPaperMarkdown === "object" ? AIPaperMarkdown : require("./markdown.js");
+  const legacyAPIProfileID = "default";
   const DEFAULT_API = {
     baseURL: "https://api.openai.com/v1",
     model: "",
@@ -23,7 +24,7 @@ var AIPaperCore = (() => {
       schemaVersion: 1,
       skillSetVersion: 1,
       apiMode: "direct",
-      api: { ...DEFAULT_API, models: [] },
+      ...normalizeAPIProfiles(),
       magpie: validateMagpie(),
       reading: validateReading(),
       skills: [{ ...defaultSkill }],
@@ -141,6 +142,27 @@ var AIPaperCore = (() => {
     return api;
   }
 
+  function validateAPIProfile(raw) {
+    const id = raw?.id;
+    if (typeof id !== "string" || !/^[a-z0-9-]{1,80}$/.test(id)) throw new Error("API 配置标识无效。");
+    const name = typeof raw.name === "string" ? raw.name.trim() : "";
+    if (!name || name.length > 80) throw new Error("API 配置名称须为 1–80 个字符。");
+    return { id, name, api: validateAPI(raw.api, false) };
+  }
+
+  function normalizeAPIProfiles(profiles, activeID, legacyAPI = {}) {
+    if (profiles === undefined) profiles = [{ id: legacyAPIProfileID, name: "默认配置", api: legacyAPI }];
+    if (!Array.isArray(profiles) || !profiles.length) throw new Error("请至少保留一套 API 配置。");
+    const apiProfiles = profiles.map(validateAPIProfile);
+    const ids = new Set(apiProfiles.map(profile => profile.id));
+    if (ids.size !== apiProfiles.length) throw new Error("存在重复的 API 配置标识。");
+    return { apiProfiles, activeAPIProfileID: ids.has(activeID) ? activeID : apiProfiles[0].id };
+  }
+
+  function activeAPIProfile(settings) {
+    return settings.apiProfiles.find(profile => profile.id === settings.activeAPIProfileID);
+  }
+
   function validateSkill(raw, fallbackID) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Skill 格式无效。 ");
     const id = String(raw.id || fallbackID || "").trim();
@@ -191,7 +213,10 @@ var AIPaperCore = (() => {
       throw new Error("暂不支持该配置文件版本。 ");
     }
     const result = {};
-    if (data.api || data.baseURL || data.baseUrl || data.base_url) {
+    if (data.apiProfiles !== undefined) {
+      Object.assign(result, normalizeAPIProfiles(data.apiProfiles, data.activeAPIProfileID));
+    }
+    else if (data.api || data.baseURL || data.baseUrl || data.base_url) {
       const api = data.api || data;
       result.api = validateAPI(api, false);
       const key = api.apiKey ?? api.api_key ?? data.apiKey ?? data.api_key;
@@ -215,13 +240,19 @@ var AIPaperCore = (() => {
       result.reading = validateReading(data.reading);
       if (data.reading.keepNativeSidebar === undefined) delete result.reading.keepNativeSidebar;
     }
-    if (!result.api && !result.magpie && !result.skills && !result.reading) throw new Error("未找到 API 配置或 Skill。 ");
+    if (!result.api && !result.apiProfiles && !result.magpie && !result.skills && !result.reading) throw new Error("未找到 API 配置或 Skill。 ");
     return result;
   }
 
   function mergeImport(settings, imported) {
     const next = JSON.parse(JSON.stringify(settings));
-    if (imported.api) next.api = imported.api;
+    if (imported.apiProfiles) {
+      const profiles = new Map(next.apiProfiles.map(profile => [profile.id, profile]));
+      for (const profile of imported.apiProfiles) profiles.set(profile.id, profile);
+      next.apiProfiles = [...profiles.values()];
+      next.activeAPIProfileID = imported.activeAPIProfileID;
+    }
+    if (imported.api) activeAPIProfile(next).api = imported.api;
     if (imported.apiMode) next.apiMode = imported.apiMode;
     if (imported.magpie) next.magpie = imported.magpie;
     if (imported.reading) next.reading = { ...next.reading, ...imported.reading };
@@ -499,7 +530,7 @@ var AIPaperCore = (() => {
 
   return {
     defaults, endpoint, modelsEndpoint, readModels, validateAPI, validateMagpie, readMagpieModels, magpiePort,
-    validateSkill, uniqueID, parseSkillText,
+    validateSkill, uniqueID, parseSkillText, legacyAPIProfileID, validateAPIProfile, normalizeAPIProfiles, activeAPIProfile,
     parseImport, mergeImport, limitText, messages, chatMessages, validateConversation, turnParentID, turnPath,
     validateReading, requestBody, readResponse, usageMetrics, completionStream, prepareFiles, prepareImages, encodeImage, maxImages, maxImageDimension,
     escapeHTML, markdownHTML, hasPrimaryModifier

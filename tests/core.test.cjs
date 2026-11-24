@@ -71,7 +71,7 @@ test("Magpie groups chat models by provider and keeps inventory separate from se
   const restored = core.mergeImport(core.defaults(defaultSkill), imported);
   assert.equal(restored.apiMode, "magpie");
   assert.deepEqual(restored.magpie, refreshed);
-  assert.equal(restored.api.baseURL, "https://api.openai.com/v1");
+  assert.equal(core.activeAPIProfile(restored).api.baseURL, "https://api.openai.com/v1");
 });
 
 test("model lists retain exact IDs and deduplicate invalid and empty entries", () => {
@@ -101,10 +101,10 @@ test("fresh settings contain only the bundled Paper Reader and keep default obje
   assert.equal(first.activeSkillID, "paper-reader");
   assert.deepEqual(first.skills, [defaultSkill]);
   assert.equal(first.skills[0].name, "论文精读");
-  first.api.models.push("local-model");
+  core.activeAPIProfile(first).api.models.push("local-model");
   first.skills[0].prompt = "编辑过的提示词";
   const second = core.defaults(defaultSkill);
-  assert.deepEqual(second.api.models, []);
+  assert.deepEqual(core.activeAPIProfile(second).api.models, []);
   assert.ok(second.skills[0].prompt.includes("作者信息与外链"));
 });
 
