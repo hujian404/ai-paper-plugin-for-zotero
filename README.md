@@ -194,7 +194,7 @@ PDF 阅读页的顶栏隐藏“朗读”和“阅读模式”按钮。高亮、�
 
 ## 从源码构建
 
-插件声明支持 Zotero 7–10。实际运行验证覆盖 macOS 上的 Zotero 10.0.9，对应记录见 `VERIFICATION.md`。Zotero 7–9 的运行验证仍待完成。
+插件声明支持 Zotero 7–10。实际运行验证覆盖 macOS 上的 Zotero 10.0.9 和 Windows 上的 Zotero 10.0.8，范围见 `VERIFICATION.md`。Zotero 7–9 的运行验证仍待完成。
 
 源码使用 Zotero 的 PreferencePanes、PDFWorker、Reader 和条目 API。对话布局挂载到主窗口的侧栏容器。阅读器通过 `renderToolbar` 事件加载工具栏样式。[Zotero 开发文档](https://www.zotero.org/support/dev/zotero_7_for_developers#custom_reader_event_handlers)、[Zotero 10 开发变更](https://www.zotero.org/support/dev/zotero_10_for_developers)
 

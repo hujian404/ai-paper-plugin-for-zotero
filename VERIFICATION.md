@@ -95,7 +95,15 @@ JavaScript 语法检查、设置页 XML 与唯一元素 ID 检查及 XPI 完整�
 
 实际运行验证覆盖 Zotero 10.0.9 的主窗口侧栏、PDF 标签页和独立 PDF 阅读窗口。清单声明的 Zotero 7–9 兼容性仍待对应版本的运行验证。
 
-原生控件外观的实机检查覆盖 macOS。Windows 和 Linux 的主题外观仍待对应平台验证。
+原生控件外观的完整实机检查覆盖 macOS。Windows 和 Linux 的浅色、深色主题仍待完整验证。
+
+## Windows 分支验证
+
+在 Windows 的 Zotero 10.0.8 中从文件安装 1.0.2。插件管理器显示已启用，PDF 阅读器可打开论文问答侧栏。
+
+- 在实际 PDF 阅读器中模拟按住 Ctrl 移动、点击及松开。确认内容块边框出现，放开 Ctrl 后边框清除，点击生成的快照进入问答输入框。
+- 使用生成的 PNG 调用侧栏图片粘贴处理函数，确认图片解码成功且生成附件。Windows 系统剪贴板、真实 Ctrl+V 和模型 API 请求仍待端到端验证。
+- Windows PowerShell 上运行 Node.js 检查，52 项通过。Python 3 构建 XPI 和更新清单，XPI 通过 ZIP 完整性检查。
 
 模型发现与问答请求使用本机模拟服务完成验证，真实服务需要有效的 API 地址和密钥，并支持兼容的 `GET /models` 与 Chat Completions 接口。Skill 采用提示词形式实现，会话存储在当前 Zotero 配置目录。
 
