@@ -90,9 +90,10 @@ var AIPaperSidebar = class {
       Zotero.launchURL(link.getAttribute("href"));
     });
     this.ui.question.addEventListener("keydown", event => {
-      if (event.isTrusted && event.metaKey && !event.altKey && !event.shiftKey && !event.ctrlKey
-          && event.key.toLowerCase() === "v") this.pasteImageShortcut(event);
-      if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
+      if (event.isComposing || event.keyCode === 229) return;
+      if (event.isTrusted && event.key.toLowerCase() === "v"
+          && this.runtime.core.hasPrimaryModifier(event, Zotero.isMac)) this.pasteImageShortcut(event);
+      if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
         this.send();
       }
@@ -756,7 +757,11 @@ var AIPaperSidebar = class {
     send.addEventListener("click", submit);
     input.addEventListener("keydown", event => {
       if (event.key === "Escape") { event.preventDefault(); cancel.click(); }
-      if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.isComposing) { event.preventDefault(); submit(); }
+      if (event.key === "Enter" && !event.isComposing && event.keyCode !== 229
+          && this.runtime.core.hasPrimaryModifier(event, Zotero.isMac)) {
+        event.preventDefault();
+        submit();
+      }
     });
     actions.append(cancel, send);
     editor.append(input, actions);

@@ -6,6 +6,18 @@ const core = require("../addon/content/core.js");
 const defaultSkill = core.parseSkillText(readFileSync(join(__dirname, "../addon/content/paper-reader.md"), "utf8"),
   "paper-reader.md", "paper-reader");
 
+test("shortcuts use Ctrl on Windows and Linux and Command on macOS", () => {
+  for (const isMac of [false, true]) {
+    const primary = { ctrlKey: !isMac, metaKey: isMac };
+    assert.equal(core.hasPrimaryModifier(primary, isMac), true);
+    assert.equal(core.hasPrimaryModifier(primary, !isMac), false);
+    assert.equal(core.hasPrimaryModifier({ ctrlKey: false, metaKey: false }, isMac), false);
+    assert.equal(core.hasPrimaryModifier({ ctrlKey: true, metaKey: true }, isMac), false);
+    assert.equal(core.hasPrimaryModifier({ ...primary, altKey: true }, isMac), false);
+    assert.equal(core.hasPrimaryModifier({ ...primary, shiftKey: true }, isMac), false);
+  }
+});
+
 test("base URLs, full endpoints and query strings resolve consistently", () => {
   const examples = [
     ["https://api.example.com", "https://api.example.com/v1/chat/completions"],

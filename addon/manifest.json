@@ -1,12 +1,12 @@
 {
   "manifest_version": 2,
   "name": "AiPluginForZotero",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "在 Zotero 专用对话侧栏阅读论文，保存问答历史并联动打开论文。",
   "applications": {
     "zotero": {
       "id": "ai-paper@local.zotero",
-      "update_url": "https://github.com/Cruysyue/ai-paper-plugin-for-zotero/releases/latest/download/updates.json",
+      "update_url": "https://github.com/hujian404/ai-paper-plugin-for-zotero/releases/latest/download/updates.json",
       "strict_min_version": "7.0",
       "strict_max_version": "10.0.*"
     }

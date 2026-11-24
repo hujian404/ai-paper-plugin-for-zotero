@@ -12,13 +12,13 @@ macOS 版统一文库、阅读器和设置的外观。文库左侧采用内嵌�
 
 ## 安装或升级
 
-1. 下载最新发行版的 `.xpi` 安装包，也可以自己构建。[GitHub Releases](https://github.com/Cruysyue/ai-paper-plugin-for-zotero/releases/latest) · [从源码构建](#从源码构建)
+1. 在 Windows 上从 `windows` 分支构建 `.xpi` 安装包。[Windows 分支](https://github.com/hujian404/ai-paper-plugin-for-zotero/tree/windows) · [从源码构建](#从源码构建)
 2. 在 Zotero 中打开 **工具 → 插件 → 右上角齿轮 → 从文件安装插件**，选择该文件。
 3. 打开 **设置 → AiPluginForZotero**。macOS 的设置入口位于屏幕顶部的 Zotero 菜单，Windows/Linux 通常位于编辑菜单。
 
 AiPluginForZotero 沿用旧版 AI论文插件的 Zotero 插件 ID。在原来的 Zotero 配置中从文件安装，可继续使用保存的 API、Magpie 模型、阅读设置和会话。从采用旧 Skill 集合的版本首次安装时，插件会备份旧 Skill，再启用《论文精读》。
 
-已安装 `1.0.0` 的用户需要覆盖安装一次 `1.0.1` 或更新版本，以接入 GitHub 更新地址。之后，Zotero 在启用插件自动更新时会定期安装更高的兼容版本。可在 **工具 → 插件 → 齿轮 → 检查更新** 主动检查。[Zotero 更新说明](https://www.zotero.org/support/kb/updates_not_detected)
+Windows 分支使用 fork 的 GitHub 更新地址。发布包含 `updates.json` 的发行版后，Zotero 可通过 **工具 → 插件 → 齿轮 → 检查更新** 查询兼容版本。[Zotero 更新说明](https://www.zotero.org/support/kb/updates_not_detected)
 
 设置页的 Base URL 和 API Key 输入框与各自标签同行，宽度随显示内容调整。「显示／隐藏」位于密钥框右侧。API 参数采用双列排列，同列标签居中对齐，两个控件等宽。论文内容范围与历史上下文字符上限各占半行，两框等宽。Skill 的「新建」「导入」「删除」紧跟选择框，分别使用绿色、金黄色和红色底配白字，名称输入位于同行右侧。空间较窄时字段组按可用宽度换行。长名称可悬停查看完整文字。
 
@@ -121,9 +121,9 @@ Magpie 在本机运行时，插件通过它的网关读取已启用的对话模�
 
 ### PDF 内容块快照和粘贴
 
-1. 在 Zotero 的 PDF 阅读页按住 **⌘ Command**，将鼠标移到段落或插图上，等待蓝色框标出内容块。
-2. 保持按住 **⌘**，点击蓝框内任意位置。插件会打开右侧问答栏，把框内画面添加到提问框内，并将光标移到输入区。独立阅读窗口中的快照会添加到主窗口里同一 PDF 的问答栏。
-3. 也可以在提问框中按 **⌘V** 粘贴剪贴板中的文字和图片。文字插入光标处，图片显示为可移除的缩略图。每条问题可添加至多 4 张图片。
+1. 在 Zotero 的 PDF 阅读页按住 **Ctrl**（macOS 为 **⌘ Command**），将鼠标移到段落或插图上，等待蓝色框标出内容块。
+2. 保持按住该键，点击蓝框内任意位置。插件会打开右侧问答栏，把框内画面添加到提问框内，并将光标移到输入区。独立阅读窗口中的快照会添加到主窗口里同一 PDF 的问答栏。
+3. 也可以在提问框中按 **Ctrl+V**（macOS 为 **⌘V**）粘贴剪贴板中的文字和图片。文字插入光标处，图片显示为可移除的缩略图。每条问题可添加至多 4 张图片。
 4. 发送截图或图片时，选择支持图像输入的 OpenAI 兼容 Chat Completions 模型。已发送的图片随问答保存在本机历史记录中，可从历史或工作树重新打开。追问时按当前分支携带近期图片，每次请求最多 4 张，优先携带本次提问的图片。[图像输入接口文档](https://developers.openai.com/api/docs/guides/images-vision?api-mode=chat)
 
 快照、粘贴图片和从文件选择器添加的图片都在卡片上方显示缩略图，下方显示名称。点击卡片查看大图，点击右上角的叉号移除待发送图片。点开历史问答中的图片也可查看大图，按 **Esc** 或点关闭按钮返回对话。
@@ -204,7 +204,7 @@ PDF 阅读页的顶栏隐藏“朗读”和“阅读模式”按钮。高亮、�
 python3 build.py
 ```
 
-生成的安装包位于 `dist/AiPluginForZotero-<版本>.xpi`。Windows 下也可用 `py -3 build.py`。
+生成的安装包位于 `dist/AiPluginForZotero-<版本>.xpi`。在 Windows PowerShell 下运行 `python build.py`，也可使用 `py -3 build.py`。
 
 自动化逻辑与存储检查使用 Node.js 自带的测试运行器。
 
@@ -215,15 +215,15 @@ node --test tests/*.test.cjs
 ## 发布新版本
 
 1. 在 `addon/manifest.json` 提高 `version`，提交并推送。继续使用相同的插件 ID 和 `update_url`。
-2. 给该提交打对应的 `vX.Y.Z` 标签并推送。首次启用自动更新的版本是 `1.0.1`。
+2. 给该提交打对应的 `vX.Y.Z` 标签并推送。
 
    ```sh
-   git tag v1.0.1
-   git push origin v1.0.1
+   git tag v1.0.2
+   git push origin v1.0.2
    ```
 
-3. 在 GitHub 的 **Actions** 确认 **Release Zotero plugin** 成功。工作流会运行测试，以同一个版本构建 `.xpi` 和 `updates.json`，附齐文件后发布 Release。更新清单记录安装包的下载地址、SHA-256 和适用的 Zotero 版本。[Actions](https://github.com/Cruysyue/ai-paper-plugin-for-zotero/actions/workflows/release.yml) · [GitHub Releases](https://github.com/Cruysyue/ai-paper-plugin-for-zotero/releases/latest)
-4. 发布后打开更新清单，确认其中的版本号和下载链接。在装有较早且已接入自动更新版本的 Zotero 中点 **检查更新**，确认插件升级到新版本。[更新清单](https://github.com/Cruysyue/ai-paper-plugin-for-zotero/releases/latest/download/updates.json)
+3. 在 fork 的 GitHub **Actions** 启用并检查 **Release Zotero plugin**。工作流会运行测试，以同一个版本构建 `.xpi` 和 `updates.json`，附齐文件后发布 Release。更新清单记录安装包的下载地址、SHA-256 和适用的 Zotero 版本。[Actions](https://github.com/hujian404/ai-paper-plugin-for-zotero/actions/workflows/release.yml) · [GitHub Releases](https://github.com/hujian404/ai-paper-plugin-for-zotero/releases)
+4. 发布后打开更新清单，确认其中的版本号和下载链接。在装有该 fork 较早版本的 Zotero 中点 **检查更新**，确认插件升级到新版本。[更新清单](https://github.com/hujian404/ai-paper-plugin-for-zotero/releases/latest/download/updates.json)
 
 ## 源码结构
 

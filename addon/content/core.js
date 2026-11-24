@@ -31,6 +31,11 @@ var AIPaperCore = (() => {
     };
   }
 
+  function hasPrimaryModifier(event, isMac) {
+    return !event.altKey && !event.shiftKey
+      && (isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey);
+  }
+
   function endpoint(baseURL) {
     let url;
     try { url = new URL(String(baseURL).trim()); }
@@ -490,7 +495,7 @@ var AIPaperCore = (() => {
     validateSkill, uniqueID, parseSkillText,
     parseImport, mergeImport, limitText, messages, chatMessages, validateConversation, turnParentID, turnPath,
     validateReading, requestBody, readResponse, usageMetrics, completionStream, prepareFiles, prepareImages, encodeImage, maxImages, maxImageDimension,
-    escapeHTML, markdownHTML
+    escapeHTML, markdownHTML, hasPrimaryModifier
   };
 })();
 

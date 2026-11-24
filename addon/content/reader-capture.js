@@ -169,7 +169,9 @@ var AIPaperReaderCapture = (() => {
         }
       };
       const keyup = event => {
-        if (event.key === "Meta") for (const view of views.values()) view.release();
+      if (event.key === (Zotero.isMac ? "Meta" : "Control")) {
+        for (const view of views.values()) view.release();
+      }
       };
       const close = () => {
         this.readers.delete(doc);
@@ -255,11 +257,16 @@ var AIPaperReaderCapture = (() => {
         if (overlay.parentNode !== element) element.append(overlay);
       }
 
-      const move = event => { pointer = { x: event.clientX, y: event.clientY }; held = event.metaKey; refresh(); };
-      const press = event => { if (event.key === "Meta") { held = true; refresh(); } };
+      const updateModifier = event => {
+        held = this.runtime.core.hasPrimaryModifier(event, Zotero.isMac);
+        refresh();
+      };
+      const move = event => {
+        pointer = { x: event.clientX, y: event.clientY };
+        updateModifier(event);
+      };
       const release = () => { held = false; if (!Cu.isDeadWrapper(overlay)) overlay.remove(); };
       const leave = () => { pointer = null; release(); };
-      const keyup = event => { if (event.key === "Meta") release(); };
       const resetNativeSelection = () => {
         const internal = reader._internalReader;
         const view = [internal?._primaryView, internal?._secondaryView].find(entry => entry?._iframeWindow
@@ -284,7 +291,7 @@ var AIPaperReaderCapture = (() => {
         const down = event.type === "pointerdown" || event.type === "mousedown";
         if (down) {
           const point = { x: event.clientX, y: event.clientY };
-          const target = event.metaKey && event.button === 0 && targetAt(point);
+          const target = event.button === 0 && this.runtime.core.hasPrimaryModifier(event, Zotero.isMac) && targetAt(point);
           capture = target ? { target, point } : null;
         }
         if (!capture) return;
@@ -295,7 +302,8 @@ var AIPaperReaderCapture = (() => {
         if (event.type !== "click") return;
         const { target, point } = capture;
         capture = null;
-        if (!event.metaKey || event.button !== 0 || Math.hypot(event.clientX - point.x, event.clientY - point.y) > 7) return;
+        if (event.button !== 0 || !this.runtime.core.hasPrimaryModifier(event, Zotero.isMac)
+            || Math.hypot(event.clientX - point.x, event.clientY - point.y) > 7) return;
         const { page, rect, viewport, picture } = target;
         const name = `PDF 第 ${page.pageNumber} 页${picture ? "插图" : "快照"}`;
         const layers = app.pdfViewer.optionalContentConfigPromise;
@@ -315,8 +323,8 @@ var AIPaperReaderCapture = (() => {
         onRemove();
         if (Cu.isDeadWrapper(doc) || Cu.isDeadWrapper(win)) return;
         win.removeEventListener("mousemove", move, true);
-        win.removeEventListener("keydown", press, true);
-        win.removeEventListener("keyup", keyup, true);
+        win.removeEventListener("keydown", updateModifier, true);
+        win.removeEventListener("keyup", updateModifier, true);
         win.removeEventListener("blur", leave);
         win.removeEventListener("pagehide", remove);
         doc.documentElement.removeEventListener("mouseleave", leave);
@@ -325,8 +333,8 @@ var AIPaperReaderCapture = (() => {
         for (const type of events) win.removeEventListener(type, click, true);
       };
       win.addEventListener("mousemove", move, true);
-      win.addEventListener("keydown", press, true);
-      win.addEventListener("keyup", keyup, true);
+      win.addEventListener("keydown", updateModifier, true);
+      win.addEventListener("keyup", updateModifier, true);
       win.addEventListener("blur", leave);
       win.addEventListener("pagehide", remove, { once: true });
       doc.documentElement.addEventListener("mouseleave", leave);
